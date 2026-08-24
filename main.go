@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"html/template"
 	"io"
@@ -11,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/antoni-ostrowski/web-shell/internal/config"
@@ -19,18 +18,18 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-const readSize = 32 * 1024
-const batchSize = 16 * 1024
-const flushEvery = 10 * time.Millisecond
+const (
+	readSize = 32 * 1024
+	// batchSize is the max bytes buffered before an immediate flush.
+	batchSize = 16 * 1024
+	// flushDelay is the output coalesce window. First byte of a burst
+	// waits at most this long; everything arriving during the window
+	// rides in the same frame. Keep tiny — this is on the latency path.
+	flushDelay = time.Millisecond
 
-type WsMsg struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload,omitempty"`
-}
-type ResizeMsgPayload struct {
-	Cols int `json:"cols"`
-	Rows int `json:"rows"`
-}
+	opData   = 'd' // payload: raw bytes for ssh stdin
+	opResize = 'r' // payload: cols uint16 LE, rows uint16 LE
+)
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -84,8 +83,6 @@ func noStore(next http.Handler) http.Handler {
 
 func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 	server, err := config.GetServer(r.PathValue("name"))
-	slog.Info("server", "server", server, "path value", r.PathValue("name"))
-	slog.Info("err", "err", err)
 	if err != nil {
 		msg := "failed to get server details"
 		slog.Error(msg, "error", err)
@@ -132,12 +129,17 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 	defer session.Close()
 
 	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 1440,
-		ssh.TTY_OP_OSPEED: 1440,
+		ssh.ECHO: 1,
+		// High baud makes ncurses/vim pick aggressive redraw strategies
+		// (fewer cursor moves, bigger writes) — noticeably snappier in nvim.
+		ssh.TTY_OP_ISPEED: 4000000,
+		ssh.TTY_OP_OSPEED: 4000000,
 	}
 
-	session.RequestPty("xterm-256color", 24, 80, modes)
+	if err := session.RequestPty("xterm-256color", 24, 80, modes); err != nil {
+		slog.Error("failed to request pty", "error", err)
+		return
+	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {
@@ -161,43 +163,35 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go readBatchSend(stdout, wsConn)
-	go readBatchSend(stderr, wsConn)
+	go pumpOutputs(wsConn, stdout, stderr)
 
 	// receiving and piping to ssh pipe
 	go func() {
+		wsConn.SetReadLimit(1 << 20)
 		for {
-			var msg WsMsg
-			err := wsConn.ReadJSON(&msg)
+			_, raw, err := wsConn.ReadMessage()
 			if err != nil {
 				slog.Error("failed to read ws msg:", err.Error(), nil)
 				break
 			}
-			switch msg.Type {
-			case "data":
-				var payload string
+			if len(raw) == 0 {
+				continue
+			}
 
-				if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-					slog.Error("invalid data payload", "error", err)
-					continue
-				}
-
-				slog.Info("got data msg", "payload", payload)
-
-				if _, err := stdin.Write([]byte(payload)); err != nil {
+			switch raw[0] {
+			case opData:
+				if _, err := stdin.Write(raw[1:]); err != nil {
 					slog.Error("failed to write ssh session", "error", err)
 				}
-			case "special_key":
-				var payload string
-				_ = json.Unmarshal(msg.Payload, &payload)
-				slog.Info("got special key msg", "payload", payload)
-
-			case "resize":
-				var payload ResizeMsgPayload
-				_ = json.Unmarshal(msg.Payload, &payload)
-				slog.Info("got resize msg", "payload", payload)
-				if err := session.WindowChange(payload.Rows, payload.Cols); err != nil {
-					slog.Error("failed to resize pty", "error", err)
+			case opResize:
+				if len(raw) >= 5 {
+					cols := uint16(raw[1]) | uint16(raw[2])<<8
+					rows := uint16(raw[3]) | uint16(raw[4])<<8
+					if cols > 0 && rows > 0 {
+						if err := session.WindowChange(int(rows), int(cols)); err != nil {
+							slog.Error("failed to resize pty", "error", err)
+						}
+					}
 				}
 			}
 		}
@@ -208,38 +202,57 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// reading from reader (stdout and stderr ssh pipes), batching and sending
-func readBatchSend(source io.Reader, wsConn *websocket.Conn) {
-	chunks := make(chan []byte, 16)
+// pumpOutputs reads from all sources and writes to the websocket.
+// A single flusher goroutine owns wsConn writes (gorilla allows one
+// concurrent writer). Output is coalesced: the first chunk of a burst
+// waits at most flushDelay, later chunks ride in the same frame until
+// batchSize forces an immediate flush.
+func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
+	chunks := make(chan []byte, 64)
 
+	var wg sync.WaitGroup
+	for _, src := range sources {
+		wg.Add(1)
+		go func(r io.Reader) {
+			defer wg.Done()
+			buf := make([]byte, readSize)
+			for {
+				n, err := r.Read(buf)
+				if n > 0 {
+					chunk := make([]byte, n)
+					copy(chunk, buf[:n])
+					chunks <- chunk
+				}
+				if err != nil {
+					return
+				}
+			}
+		}(src)
+	}
 	go func() {
-		defer close(chunks)
-		buf := make([]byte, readSize)
-		for {
-			n, err := source.Read(buf)
-			if n > 0 {
-				chunk := make([]byte, n)
-				copy(chunk, buf[:n])
-				chunks <- chunk
-			}
-			if err != nil {
-				slog.Error("failed to read reader:", "error", err)
-				return
-			}
-		}
+		wg.Wait()
+		close(chunks)
 	}()
 
-	ticker := time.NewTicker(flushEvery)
-	defer ticker.Stop()
-	var batch bytes.Buffer
+	var batch []byte
+	timer := time.NewTimer(time.Hour)
+	timer.Stop()
 
 	flush := func() error {
-		if batch.Len() == 0 {
+		if len(batch) == 0 {
 			return nil
 		}
-		err := wsConn.WriteMessage(websocket.BinaryMessage, batch.Bytes())
-		batch.Reset()
+		err := wsConn.WriteMessage(websocket.BinaryMessage, batch)
+		batch = batch[:0]
 		return err
+	}
+	stopTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
 	}
 
 	for {
@@ -249,18 +262,21 @@ func readBatchSend(source io.Reader, wsConn *websocket.Conn) {
 				_ = flush()
 				return
 			}
-			batch.Write(chunk)
-			if batch.Len() >= batchSize {
+			if len(batch) == 0 {
+				timer.Reset(flushDelay)
+			}
+			batch = append(batch, chunk...)
+			if len(batch) >= batchSize {
+				stopTimer()
 				if err := flush(); err != nil {
 					return
 				}
 			}
-		case <-ticker.C:
+		case <-timer.C:
 			if err := flush(); err != nil {
 				return
 			}
 		}
-
 	}
 }
 
