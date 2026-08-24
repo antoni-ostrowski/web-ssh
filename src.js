@@ -19,24 +19,19 @@ const ws = new WebSocketTransport({
 ws.connect();
 
 term.onData = (data) => {
-	ws.send(
-		JSON.stringify({
-			type: "data",
-			payload: data,
-		}),
-	);
+	const payload = new TextEncoder().encode(data);
+	const frame = new Uint8Array(payload.length + 1);
+	frame[0] = 0x64; // 'd' data opcode
+	frame.set(payload, 1);
+	ws.send(frame);
 };
 
 term.onResize = (cols, rows) => {
-	ws.send(
-		JSON.stringify({
-			type: "resize",
-			payload: {
-				cols,
-				rows,
-			},
-		}),
-	);
+	const frame = new Uint8Array(5);
+	frame[0] = 0x72; // 'r' resize opcode
+	new DataView(frame.buffer).setUint16(1, cols, true);
+	new DataView(frame.buffer).setUint16(3, rows, true);
+	ws.send(frame);
 };
 
 const modifierKeysCodes = [
@@ -56,10 +51,10 @@ const termTextAreaElement = document.querySelector("#terminal textarea");
 
 termTextAreaElement.addEventListener("keydown", (e) => {
 	const keyCode = e.code;
-	console.log(keyCode);
+	// console.log(keyCode);
 	if (modifierKeysCodes.includes(keyCode)) {
 		e.preventDefault();
-		console.log("found key:", keyCode);
+		// console.log("found key:", keyCode);
 		ws.send(
 			JSON.stringify({
 				type: "special_key",
