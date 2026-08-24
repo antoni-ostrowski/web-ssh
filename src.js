@@ -1,38 +1,129 @@
-import { WTerm, WebSocketTransport } from "@wterm/dom";
-import "@wterm/dom/css";
+import { Terminal } from "@xterm/xterm";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 
 const name = location.pathname.split("/").pop()
 const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsUrl = `${protocol}//${window.location.host}/connect/${name}`;
 
 const termElement = document.getElementById("terminal");
-const term = new WTerm(termElement, { cols: 80, rows: 24, cursorBlink: true, autoResize: true });
-await term.init();
 
-const ws = new WebSocketTransport({
-	url: wsUrl,
-	onData: (data) => {
-		term.write(data);
-	},
+const statusEl = document.createElement("div");
+statusEl.id = "status";
+statusEl.textContent = "connecting";
+termElement.parentNode.insertBefore(statusEl, termElement);
+
+const term = new Terminal({
+	cursorBlink: true,
+	fontSize: 14,
+	fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+	scrollback: 5000,
 });
 
-ws.connect();
+const fitAddon = new FitAddon();
+term.loadAddon(fitAddon);
 
-term.onData = (data) => {
-	const payload = new TextEncoder().encode(data);
-	const frame = new Uint8Array(payload.length + 1);
-	frame[0] = 0x64; // 'd' data opcode
-	frame.set(payload, 1);
-	ws.send(frame);
+let webgl = new WebglAddon();
+term.loadAddon(webgl);
+webgl.onContextLoss(() => {
+	webgl.dispose();
+});
+
+term.open(termElement);
+term.focus();
+
+const ws = new WebSocket(wsUrl);
+ws.binaryType = "arraybuffer";
+
+const send = (frame) => {
+	if (ws.readyState === WebSocket.OPEN) {
+		ws.send(frame);
+	}
 };
 
-term.onResize = (cols, rows) => {
+const sendResize = (cols, rows) => {
 	const frame = new Uint8Array(5);
 	frame[0] = 0x72; // 'r' resize opcode
 	new DataView(frame.buffer).setUint16(1, cols, true);
 	new DataView(frame.buffer).setUint16(3, rows, true);
-	ws.send(frame);
+	send(frame);
 };
+
+ws.onopen = () => {
+	statusEl.textContent = "connected";
+	fit();
+};
+
+ws.onclose = () => {
+	statusEl.textContent = "disconnected";
+};
+
+ws.onerror = () => {
+	statusEl.textContent = "disconnected";
+};
+
+ws.onmessage = (event) => {
+	term.write(new Uint8Array(event.data));
+};
+
+term.onData((data) => {
+	const payload = new TextEncoder().encode(data);
+	const frame = new Uint8Array(payload.length + 1);
+	frame[0] = 0x64; // 'd' data opcode
+	frame.set(payload, 1);
+	send(frame);
+});
+
+term.onResize(({ cols, rows }) => {
+	statusEl.textContent = `${cols}x${rows}`;
+	sendResize(cols, rows);
+});
+
+let resizeTimeout = null;
+const fit = () => {
+	try {
+		const parent = termElement.parentElement;
+		if (parent && parent.offsetHeight === 0) return;
+		fitAddon.fit();
+	} catch (err) {
+		// container hidden/zero-size; retry on next event
+	}
+	sendResize(term.cols, term.rows);
+};
+
+window.addEventListener("resize", () => {
+	clearTimeout(resizeTimeout);
+	resizeTimeout = setTimeout(fit, 100);
+});
+
+if (typeof ResizeObserver !== "undefined") {
+	const ro = new ResizeObserver(() => {
+		clearTimeout(resizeTimeout);
+		resizeTimeout = setTimeout(fit, 100);
+	});
+	ro.observe(termElement);
+}
+
+if (document.fonts?.ready) {
+	document.fonts.ready.then(() => setTimeout(fit, 50));
+}
+
+document.addEventListener("visibilitychange", () => {
+	if (!document.hidden) {
+		setTimeout(fit, 150);
+	}
+});
+
+webgl.onContextLoss(() => {
+	webgl.dispose();
+});
+
+termElement.addEventListener("webglcontextrestored", () => {
+	setTimeout(fit, 50);
+});
+
+fit();
 
 const modifierKeysCodes = [
 	"ControlLeft",
@@ -47,19 +138,23 @@ const modifierKeysCodes = [
 	"Escape",
 ];
 
-const termTextAreaElement = document.querySelector("#terminal textarea");
+const termTextAreaElement =
+	document.querySelector(".xterm-helper-textarea") ||
+	document.querySelector("#terminal textarea");
 
-termTextAreaElement.addEventListener("keydown", (e) => {
-	const keyCode = e.code;
-	// console.log(keyCode);
-	if (modifierKeysCodes.includes(keyCode)) {
-		e.preventDefault();
-		// console.log("found key:", keyCode);
-		ws.send(
-			JSON.stringify({
-				type: "special_key",
-				payload: keyCode,
-			}),
-		);
-	}
-});
+if (termTextAreaElement) {
+	termTextAreaElement.addEventListener("keydown", (e) => {
+		const keyCode = e.code;
+		// console.log(keyCode);
+		if (modifierKeysCodes.includes(keyCode)) {
+			e.preventDefault();
+			// console.log("found key:", keyCode);
+			ws.send(
+				JSON.stringify({
+					type: "special_key",
+					payload: keyCode,
+				}),
+			);
+		}
+	});
+}
