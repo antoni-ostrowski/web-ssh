@@ -31,9 +31,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./dev/config.json:/app/config/config.json:ro
+      - /opt/web-ssh/config.json:/app/config/config.json:ro
       - /Users/user/.ssh/known_hosts:/app/config/known_hosts:ro
-    restart: unless-stopped
 ```
 
 Then:
@@ -58,6 +57,3 @@ Open http://localhost:3000 — the index page lists the servers from `config.jso
 # Todos
 - [ ] qmk inspired remaping control
 - [ ] modifying config from client
-
-
-

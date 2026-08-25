@@ -18,12 +18,14 @@ var __toESM = (mod, isNodeMode, target) => {
   }
   target = mod != null ? __create(__getProtoOf(mod)) : {};
   const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
-  for (let key of __getOwnPropNames(mod))
-    if (!__hasOwnProp.call(to, key))
-      __defProp(to, key, {
-        get: __accessProp.bind(mod, key),
-        enumerable: true
-      });
+  if (mod && typeof mod === "object" || typeof mod === "function") {
+    for (let key of __getOwnPropNames(mod))
+      if (!__hasOwnProp.call(to, key))
+        __defProp(to, key, {
+          get: __accessProp.bind(mod, key),
+          enumerable: true
+        });
+  }
   if (canCache)
     cache.set(mod, to);
   return to;
@@ -31,7 +33,7 @@ var __toESM = (mod, isNodeMode, target) => {
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 
 // node_modules/@xterm/xterm/lib/xterm.js
-var require_xterm = __commonJS((exports, module) => {
+var require_xterm = __commonJS(function(exports, module) {
   (function(e, t) {
     if (typeof exports == "object" && typeof module == "object")
       module.exports = t();
@@ -6675,7 +6677,7 @@ WARNING: This link could potentially be dangerous`)) {
 });
 
 // node_modules/@xterm/addon-webgl/lib/addon-webgl.js
-var require_addon_webgl = __commonJS((exports, module) => {
+var require_addon_webgl = __commonJS(function(exports, module) {
   (function(e, t) {
     typeof exports == "object" && typeof module == "object" ? module.exports = t() : typeof define == "function" && define.amd ? define([], t) : typeof exports == "object" ? exports.WebglAddon = t() : e.WebglAddon = t();
   })(self, () => (() => {
@@ -8736,7 +8738,7 @@ void main() {
 });
 
 // node_modules/@xterm/addon-fit/lib/addon-fit.js
-var require_addon_fit = __commonJS((exports, module) => {
+var require_addon_fit = __commonJS(function(exports, module) {
   (function(e, t) {
     typeof exports == "object" && typeof module == "object" ? module.exports = t() : typeof define == "function" && define.amd ? define([], t) : typeof exports == "object" ? exports.FitAddon = t() : e.FitAddon = t();
   })(self, () => (() => {
