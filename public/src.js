@@ -8802,14 +8802,20 @@ term.open(termElement);
 term.focus();
 var ws;
 var retries = 0;
+var wasConnected = false;
 var connectWs = () => {
   ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
   ws.onopen = () => {
+    const reconnected = wasConnected;
+    wasConnected = true;
     retries = 0;
     statusEl.textContent = "connected";
     term.reset();
     fit();
+    if (reconnected) {
+      sendData("tmux a\r");
+    }
   };
   ws.onclose = () => {
     statusEl.textContent = "disconnected";
@@ -8835,12 +8841,15 @@ var sendResize = (cols, rows) => {
   new DataView(frame.buffer).setUint16(3, rows, true);
   send(frame);
 };
-term.onData((data) => {
-  const payload = new TextEncoder().encode(data);
+var sendData = (str) => {
+  const payload = new TextEncoder().encode(str);
   const frame = new Uint8Array(payload.length + 1);
   frame[0] = 100;
   frame.set(payload, 1);
   send(frame);
+};
+term.onData((data) => {
+  sendData(data);
 });
 term.onResize(({ cols, rows }) => {
   statusEl.textContent = `${cols}x${rows}`;

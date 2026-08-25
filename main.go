@@ -97,25 +97,9 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 	defer wsConn.Close()
 
 	// Keepalive: Cloudflare drops idle WebSockets (~100s silence).
-	// Protocol-level pings every 30s reset that timer; browsers auto-pong
-	// even with the tab throttled/suspended. Pong handler extends the
-	// read deadline so truly-dead clients get reaped.
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if err := wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					return
-				}
-			case <-done:
-				return
-			}
-		}
-	}()
+	// Pings are sent by pumpOutputs (the single writer goroutine).
+	// Pong handler extends the read deadline so truly-dead clients
+	// get reaped instead of lingering forever.
 	const pongTimeout = 90 * time.Second
 	wsConn.SetReadDeadline(time.Now().Add(pongTimeout))
 	wsConn.SetPongHandler(func(string) error {
@@ -268,6 +252,12 @@ func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 
+	// Keepalive: Cloudflare drops WebSockets after ~100s of silence.
+	// Ping from this goroutine only — it's the sole wsConn writer, and
+	// gorilla forbids concurrent writes. Browsers auto-pong.
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -304,6 +294,10 @@ func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
 			}
 		case <-timer.C:
 			if err := flush(); err != nil {
+				return
+			}
+		case <-pingTicker.C:
+			if err := wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}

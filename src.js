@@ -35,16 +35,22 @@ term.focus();
 
 let ws;
 let retries = 0;
+let wasConnected = false;
 
 const connectWs = () => {
 	ws = new WebSocket(wsUrl);
 	ws.binaryType = "arraybuffer";
 
 	ws.onopen = () => {
+		const reconnected = wasConnected;
+		wasConnected = true;
 		retries = 0;
 		statusEl.textContent = "connected";
 		term.reset();
 		fit();
+		if (reconnected) {
+			sendData("tmux a\r");
+		}
 	};
 
 	ws.onclose = () => {
@@ -77,12 +83,16 @@ const sendResize = (cols, rows) => {
 	send(frame);
 };
 
-term.onData((data) => {
-	const payload = new TextEncoder().encode(data);
+const sendData = (str) => {
+	const payload = new TextEncoder().encode(str);
 	const frame = new Uint8Array(payload.length + 1);
 	frame[0] = 0x64; // 'd' data opcode
 	frame.set(payload, 1);
 	send(frame);
+};
+
+term.onData((data) => {
+	sendData(data);
 });
 
 term.onResize(({ cols, rows }) => {
