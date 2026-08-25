@@ -32,7 +32,7 @@ var __toESM = (mod, isNodeMode, target) => {
 };
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 
-// node_modules/@xterm/xterm/lib/xterm.js
+// node_modules/.bun/@xterm+xterm@5.5.0/node_modules/@xterm/xterm/lib/xterm.js
 var require_xterm = __commonJS(function(exports, module) {
   (function(e, t) {
     if (typeof exports == "object" && typeof module == "object")
@@ -6676,7 +6676,7 @@ WARNING: This link could potentially be dangerous`)) {
   })());
 });
 
-// node_modules/@xterm/addon-webgl/lib/addon-webgl.js
+// node_modules/.bun/@xterm+addon-webgl@0.18.0+c27fd418321dfbfb/node_modules/@xterm/addon-webgl/lib/addon-webgl.js
 var require_addon_webgl = __commonJS(function(exports, module) {
   (function(e, t) {
     typeof exports == "object" && typeof module == "object" ? module.exports = t() : typeof define == "function" && define.amd ? define([], t) : typeof exports == "object" ? exports.WebglAddon = t() : e.WebglAddon = t();
@@ -8737,7 +8737,7 @@ void main() {
   })());
 });
 
-// node_modules/@xterm/addon-fit/lib/addon-fit.js
+// node_modules/.bun/@xterm+addon-fit@0.10.0+c27fd418321dfbfb/node_modules/@xterm/addon-fit/lib/addon-fit.js
 var require_addon_fit = __commonJS(function(exports, module) {
   (function(e, t) {
     typeof exports == "object" && typeof module == "object" ? module.exports = t() : typeof define == "function" && define.amd ? define([], t) : typeof exports == "object" ? exports.FitAddon = t() : e.FitAddon = t();
@@ -8800,8 +8800,29 @@ webgl.onContextLoss(() => {
 });
 term.open(termElement);
 term.focus();
-var ws = new WebSocket(wsUrl);
-ws.binaryType = "arraybuffer";
+var ws;
+var retries = 0;
+var connectWs = () => {
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    retries = 0;
+    statusEl.textContent = "connected";
+    term.reset();
+    fit();
+  };
+  ws.onclose = () => {
+    statusEl.textContent = "disconnected";
+    setTimeout(connectWs, Math.min(1000 * 2 ** retries++, 1e4));
+  };
+  ws.onerror = () => {
+    statusEl.textContent = "disconnected";
+  };
+  ws.onmessage = (event) => {
+    term.write(new Uint8Array(event.data));
+  };
+};
+connectWs();
 var send = (frame) => {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(frame);
@@ -8813,19 +8834,6 @@ var sendResize = (cols, rows) => {
   new DataView(frame.buffer).setUint16(1, cols, true);
   new DataView(frame.buffer).setUint16(3, rows, true);
   send(frame);
-};
-ws.onopen = () => {
-  statusEl.textContent = "connected";
-  fit();
-};
-ws.onclose = () => {
-  statusEl.textContent = "disconnected";
-};
-ws.onerror = () => {
-  statusEl.textContent = "disconnected";
-};
-ws.onmessage = (event) => {
-  term.write(new Uint8Array(event.data));
 };
 term.onData((data) => {
   const payload = new TextEncoder().encode(data);
@@ -8865,6 +8873,9 @@ if (document.fonts?.ready) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     setTimeout(fit, 150);
+    if (ws.readyState === WebSocket.CLOSED) {
+      connectWs();
+    }
   }
 });
 webgl.onContextLoss(() => {

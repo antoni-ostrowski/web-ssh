@@ -33,8 +33,35 @@ webgl.onContextLoss(() => {
 term.open(termElement);
 term.focus();
 
-const ws = new WebSocket(wsUrl);
-ws.binaryType = "arraybuffer";
+let ws;
+let retries = 0;
+
+const connectWs = () => {
+	ws = new WebSocket(wsUrl);
+	ws.binaryType = "arraybuffer";
+
+	ws.onopen = () => {
+		retries = 0;
+		statusEl.textContent = "connected";
+		term.reset();
+		fit();
+	};
+
+	ws.onclose = () => {
+		statusEl.textContent = "disconnected";
+		setTimeout(connectWs, Math.min(1000 * 2 ** retries++, 10000));
+	};
+
+	ws.onerror = () => {
+		statusEl.textContent = "disconnected";
+	};
+
+	ws.onmessage = (event) => {
+		term.write(new Uint8Array(event.data));
+	};
+};
+
+connectWs();
 
 const send = (frame) => {
 	if (ws.readyState === WebSocket.OPEN) {
@@ -48,23 +75,6 @@ const sendResize = (cols, rows) => {
 	new DataView(frame.buffer).setUint16(1, cols, true);
 	new DataView(frame.buffer).setUint16(3, rows, true);
 	send(frame);
-};
-
-ws.onopen = () => {
-	statusEl.textContent = "connected";
-	fit();
-};
-
-ws.onclose = () => {
-	statusEl.textContent = "disconnected";
-};
-
-ws.onerror = () => {
-	statusEl.textContent = "disconnected";
-};
-
-ws.onmessage = (event) => {
-	term.write(new Uint8Array(event.data));
 };
 
 term.onData((data) => {
@@ -112,6 +122,9 @@ if (document.fonts?.ready) {
 document.addEventListener("visibilitychange", () => {
 	if (!document.hidden) {
 		setTimeout(fit, 150);
+		if (ws.readyState === WebSocket.CLOSED) {
+			connectWs();
+		}
 	}
 });
 

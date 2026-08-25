@@ -95,6 +95,33 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer wsConn.Close()
+
+	// Keepalive: Cloudflare drops idle WebSockets (~100s silence).
+	// Protocol-level pings every 30s reset that timer; browsers auto-pong
+	// even with the tab throttled/suspended. Pong handler extends the
+	// read deadline so truly-dead clients get reaped.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	const pongTimeout = 90 * time.Second
+	wsConn.SetReadDeadline(time.Now().Add(pongTimeout))
+	wsConn.SetPongHandler(func(string) error {
+		return wsConn.SetReadDeadline(time.Now().Add(pongTimeout))
+	})
+
 	knownHosts, err := knownhosts.New(knownHostsPath())
 	if err != nil {
 		slog.Error("failed to get ssh known hosts", "error", err)
@@ -173,8 +200,7 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				slog.Error("failed to read ws msg:", err.Error(), nil)
 				break
-			}
-			if len(raw) == 0 {
+			} else if len(raw) == 0 {
 				continue
 			}
 
@@ -195,6 +221,10 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		// Reader gone = client gone. Tear down so Wait() returns
+		// and nothing leaks.
+		session.Close()
+		conn.Close()
 	}()
 
 	if err := session.Wait(); err != nil {
