@@ -8888,28 +8888,3 @@ termElement.addEventListener("webglcontextrestored", () => {
   setTimeout(fit, 50);
 });
 fit();
-var modifierKeysCodes = [
-  "ControlLeft",
-  "ControlRight",
-  "AltLeft",
-  "AltRight",
-  "MetaRight",
-  "MetaLeft",
-  "ShiftLeft",
-  "ShiftRight",
-  "CapsLock",
-  "Escape"
-];
-var termTextAreaElement = document.querySelector(".xterm-helper-textarea") || document.querySelector("#terminal textarea");
-if (termTextAreaElement) {
-  termTextAreaElement.addEventListener("keydown", (e) => {
-    const keyCode = e.code;
-    if (modifierKeysCodes.includes(keyCode)) {
-      e.preventDefault();
-      ws.send(JSON.stringify({
-        type: "special_key",
-        payload: keyCode
-      }));
-    }
-  });
-}

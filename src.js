@@ -142,36 +142,37 @@ termElement.addEventListener("webglcontextrestored", () => {
 
 fit();
 
-const modifierKeysCodes = [
-	"ControlLeft",
-	"ControlRight",
-	"AltLeft",
-	"AltRight",
-	"MetaRight",
-	"MetaLeft",
-	"ShiftLeft",
-	"ShiftRight",
-	"CapsLock",
-	"Escape",
-];
+// const modifierKeysCodes = [
+// 	"ControlLeft",
+// 	"ControlRight",
+// 	"AltLeft",
+// 	"AltRight",
+// 	"MetaRight",
+// 	"MetaLeft",
+// 	"ShiftLeft",
+// 	"ShiftRight",
+// 	"CapsLock",
+// 	"Escape",
+// ];
 
-const termTextAreaElement =
-	document.querySelector(".xterm-helper-textarea") ||
-	document.querySelector("#terminal textarea");
-
-if (termTextAreaElement) {
-	termTextAreaElement.addEventListener("keydown", (e) => {
-		const keyCode = e.code;
-		// console.log(keyCode);
-		if (modifierKeysCodes.includes(keyCode)) {
-			e.preventDefault();
-			// console.log("found key:", keyCode);
-			ws.send(
-				JSON.stringify({
-					type: "special_key",
-					payload: keyCode,
-				}),
-			);
-		}
-	});
-}
+// const termTextAreaElement =
+// 	document.querySelector(".xterm-helper-textarea") ||
+// 	document.querySelector("#terminal textarea");
+// console.log(termTextAreaElement)
+//
+// if (termTextAreaElement) {
+// 	termTextAreaElement.addEventListener("keydown", (e) => {
+// 		const keyCode = e.code;
+// 		console.log(keyCode);
+// 		if (modifierKeysCodes.includes(keyCode)) {
+// 			e.preventDefault();
+// 			// console.log("found key:", keyCode);
+// 			ws.send(
+// 				JSON.stringify({
+// 					type: "special_key",
+// 					payload: keyCode,
+// 				}),
+// 			);
+// 		}
+// 	});
+// }
