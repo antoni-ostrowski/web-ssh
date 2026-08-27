@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -205,15 +206,62 @@ func handleDirectPipe(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		// Reader gone = client gone. Tear down so Wait() returns
-		// and nothing leaks.
+		if sess := lastTmux.readFrom(conn); sess != "" {
+			lastTmux.set(server.Name, sess)
+		}
 		session.Close()
 		conn.Close()
 	}()
 
+	if name := lastTmux.get(server.Name); name != "" {
+		stdin.Write([]byte("tmux a -t " + name + "\r"))
+	}
+
 	if err := session.Wait(); err != nil {
 		slog.Info("ssh session ended", "error", err)
 	}
+}
+
+var lastTmux = NewTmuxStore()
+
+type TmuxStore struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func NewTmuxStore() *TmuxStore {
+	return &TmuxStore{m: map[string]string{}}
+}
+
+func (s *TmuxStore) get(key string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.m[key]
+}
+
+func (s *TmuxStore) set(key, val string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[key] = val
+}
+
+func (s *TmuxStore) readFrom(conn *ssh.Client) string {
+	sess, err := conn.NewSession()
+	if err != nil {
+		return ""
+	}
+	defer sess.Close()
+	out, err := sess.Output("tmux ls -F '#{session_name} #{session_attached}'")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && f[1] == "1" {
+			return f[0]
+		}
+	}
+	return ""
 }
 
 // pumpOutputs reads from all sources and writes to the websocket.

@@ -35,22 +35,16 @@ term.focus();
 
 let ws;
 let retries = 0;
-let wasConnected = false;
 
 const connectWs = () => {
 	ws = new WebSocket(wsUrl);
 	ws.binaryType = "arraybuffer";
 
 	ws.onopen = () => {
-		const reconnected = wasConnected;
-		wasConnected = true;
 		retries = 0;
 		statusEl.textContent = "connected";
 		term.reset();
 		fit();
-		if (reconnected) {
-			sendData("tmux a\r");
-		}
 	};
 
 	ws.onclose = () => {

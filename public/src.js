@@ -8802,20 +8802,14 @@ term.open(termElement);
 term.focus();
 var ws;
 var retries = 0;
-var wasConnected = false;
 var connectWs = () => {
   ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
   ws.onopen = () => {
-    const reconnected = wasConnected;
-    wasConnected = true;
     retries = 0;
     statusEl.textContent = "connected";
     term.reset();
     fit();
-    if (reconnected) {
-      sendData("tmux a\r");
-    }
   };
   ws.onclose = () => {
     statusEl.textContent = "disconnected";
