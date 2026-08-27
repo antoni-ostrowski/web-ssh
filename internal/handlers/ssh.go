@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/antoni-ostrowski/web-shell/internal/config"
-	"github.com/antoni-ostrowski/web-shell/internal/tmuxstore"
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -31,11 +31,11 @@ const (
 )
 
 type SSH struct {
-	tmuxStore *tmuxstore.TmuxStore
+	conf *config.Config
 }
 
-func NewSSH(t *tmuxstore.TmuxStore) *SSH {
-	return &SSH{t}
+func NewSSH(c *config.Config) *SSH {
+	return &SSH{c}
 }
 
 var upgrader = websocket.Upgrader{
@@ -148,6 +148,11 @@ func (s *SSH) conn(w http.ResponseWriter, r *http.Request) {
 
 	go pumpOutputs(wsConn, stdout, stderr)
 
+	cmd := fmt.Sprintf("tmux a -t \"$(< %s)\"\n", server.LastTmuxSessionPath)
+	if server.LastTmuxSessionPath != "" {
+		stdin.Write([]byte(cmd))
+	}
+
 	// receiving and piping to ssh pipe
 	go func() {
 		wsConn.SetReadLimit(1 << 20)
@@ -177,18 +182,10 @@ func (s *SSH) conn(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		if sess := s.tmuxStore.ReadFrom(conn); sess != "" {
-			slog.Info("saving tmux session", "session_name", sess, "for_server", server.Name)
-			s.tmuxStore.Set(server.Name, sess)
-		}
+
 		session.Close()
 		conn.Close()
 	}()
-
-	if name := s.tmuxStore.Get(server.Name); name != "" {
-		slog.Info("successfuly read tmux session name from store (reattaching) ", "session_name", name, "for_server", server.Name)
-		stdin.Write([]byte("tmux a -t " + name + "\r"))
-	}
 
 	if err := session.Wait(); err != nil {
 		slog.Info("ssh session ended", "error", err)

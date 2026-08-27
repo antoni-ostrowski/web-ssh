@@ -8,7 +8,6 @@ import (
 
 	"github.com/antoni-ostrowski/web-shell/internal/config"
 	"github.com/antoni-ostrowski/web-shell/internal/handlers"
-	"github.com/antoni-ostrowski/web-shell/internal/tmuxstore"
 )
 
 func main() {
@@ -19,8 +18,7 @@ func main() {
 	}
 	c.Print()
 
-	tmuxStore := tmuxstore.New()
-	sshHandler := handlers.NewSSH(tmuxStore)
+	sshHandler := handlers.NewSSH(&c)
 
 	mux := http.NewServeMux()
 

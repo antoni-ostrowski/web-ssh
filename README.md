@@ -16,7 +16,8 @@ Self-hosted web app & ssh proxy I build purely to have usable mobile ssh client 
 			"name": "custom name",
 			"user": "ssh server user",
 			"pass": "ssh server pass",
-			"host": "ssh hostname"
+			"host": "ssh hostname",
+			"last_tmux_session_path": "/home/antost/last_tmux_session"
 		}
 	]
 }
@@ -52,6 +53,43 @@ Open http://localhost:3000 — the index page lists the servers from `config.jso
 - There is no auth on the app itself — protect it with Cloudflare Tunnel + Zero Trust or another reverse proxy.
 
 > overwriting with envs is useful for development when I run the program localy
+
+
+## Auto-resume tmux session (optional)
+
+Fully optional — skips if `last_tmux_session_path` is unset. This solves the
+iPad PWA case: the browser tab may be backgrounded/swiped away and the server
+never sees a clean disconnect, so "save on disconnect" logic is unreliable.
+Instead, tracking happens *inside tmux on the remote*, and web-ssh just reads
+the result on connect.
+
+The idea (specific to my setup, but portable):
+
+1. A tmux-side helper (`scripts/tmux-session-switcher.sh`) lists your tmux
+   sessions, lets you pick one with fzf, and writes its name to a file:
+   ```sh
+   printf '%s' "$session" > /path/to/last_tmux_session
+   ```
+    Bind it in `~/.tmux.conf` and it runs whenever you switch sessions:
+   ```
+   bind s run-shell "bash /path/to/tmux-session-switcher.sh"
+   ```
+   The file is your "last used session" tracker. (Mine lives on the SSH
+   target at `~/.config/web-ssh/last_tmux_session` — change the path in the
+   script to whatever you want, it just needs to be reachable by your ssh
+   user.)
+
+2. web-ssh knows where that file is via `last_tmux_session_path` in
+   `config.json`. On every connection it reads the file and types
+   `tmux a -t "$(< path)"` into the fresh shell, so you land straight back
+   into your last session — no client-side reattach logic, no storage in the
+   web-ssh process, works even after the app was force-quit.
+
+It's a hand-rolled alternative to `tmux attach`'s built-in "most recently
+used" session pick, because I found that choice unreliable when juggling
+several long-lived sessions. The file-tracking lets me decide explicitly
+what "my session" means. Needs `tmux`, `fzf` and `fd` on the target; the script
+uses `switch-client`, so it's meant to be run from inside tmux.
 
 
 # Todos

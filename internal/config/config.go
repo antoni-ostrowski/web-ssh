@@ -11,11 +11,13 @@ import (
 type Config struct {
 	Servers []Server `json:"servers"`
 }
+
 type Server struct {
-	Name     string `json:"name"`
-	User     string `json:"user"`
-	Password string `json:"pass"`
-	Host     string `json:"host"`
+	Name                string `json:"name"`
+	User                string `json:"user"`
+	Password            string `json:"pass"`
+	Host                string `json:"host"`
+	LastTmuxSessionPath string `json:"last_tmux_session_path"`
 }
 
 func Get() (cfn Config, err error) {
