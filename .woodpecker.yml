@@ -12,7 +12,11 @@ steps:
     image: docker:27-cli
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    secrets: [ DOCKER_USERNAME, DOCKER_PASSWORD ]
+    environment:
+      DOCKER_USERNAME:
+        from_secret: DOCKER_USERNAME
+      DOCKER_PASSWORD:
+        from_secret: DOCKER_PASSWORD
     commands:
       - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
       - docker build --platform=linux/amd64 -t antost360/web-ssh:latest .
