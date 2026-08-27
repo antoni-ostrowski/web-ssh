@@ -48,12 +48,6 @@ func main() {
 	http.Handle("/public/", noStore(http.StripPrefix("/public/", http.FileServer(http.Dir("./public")))))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		c, err := config.Get()
-		if err != nil {
-			msg := "failed to get config"
-			slog.Error(msg, "error", err)
-			http.Error(w, msg, http.StatusInternalServerError)
-		}
 		if err := indexTempl.Execute(w, c.Servers); err != nil {
 			msg := "failed execute template"
 			slog.Error(msg, "error", err)
