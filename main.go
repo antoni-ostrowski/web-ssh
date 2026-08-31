@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,9 +17,10 @@ func main() {
 		slog.Error("config: failed to load", "error", err)
 		os.Exit(1)
 	}
+	log.Print("nrsteaitnrseiatrsneirnsei")
 	c.Print()
 
-	sshHandler := handlers.NewSSH(&c)
+	sshHandttler := handlers.NewSSH(&c)
 
 	mux := http.NewServeMux()
 
