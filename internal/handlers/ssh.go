@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	readSize = 32 * 1024
-	// batchSize is the max bytes buffered before an immediate flush.
-	batchSize = 16 * 1024
+	readSize = 4 * 1024
+	// batchSize is the max bytes per WebSocket frame. Small = less
+	// head-of-line blocking on slow/jittery links (school wifi). At
+	// 1 Mbps, 4 KiB ~32ms vs 16 KiB ~128ms blocking the next key echo.
+	batchSize = 4 * 1024
 	// flushDelay is the output coalesce window. First byte of a burst
 	// waits at most this long; everything arriving during the window
 	// rides in the same frame. Keep tiny — this is on the latency path.
@@ -39,7 +41,10 @@ func NewSSH(c *config.Config) *SSH {
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	ReadBufferSize:    4096,
+	WriteBufferSize:   4096,
+	EnableCompression: true,
+	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
 func (s *SSH) Register(mux *http.ServeMux) {
@@ -264,8 +269,20 @@ func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
 			batch = append(batch, chunk...)
 			if len(batch) >= batchSize {
 				stopTimer()
-				if err := flush(); err != nil {
-					return
+				// HOL fix: never send >batchSize per frame. Drain full
+				// batchSize slices immediately; leave <batchSize tail to
+				// coalesce via timer. At 1 Mbps, 4 KiB ~32ms vs 16 KiB ~128ms.
+				for len(batch) >= batchSize {
+					toSend := make([]byte, batchSize)
+					copy(toSend, batch[:batchSize])
+					if err := wsConn.WriteMessage(websocket.BinaryMessage, toSend); err != nil {
+						return
+					}
+					copy(batch, batch[batchSize:])
+					batch = batch[:len(batch)-batchSize]
+				}
+				if len(batch) > 0 {
+					timer.Reset(flushDelay)
 				}
 			}
 		case <-timer.C:
