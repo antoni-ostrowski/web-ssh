@@ -73,16 +73,6 @@ func (s *SSH) conn(w http.ResponseWriter, r *http.Request) {
 	}
 	defer wsConn.Close()
 
-	// Keepalive: Cloudflare drops idle WebSockets (~100s silence).
-	// Pings are sent by pumpOutputs (the single writer goroutine).
-	// Pong handler extends the read deadline so truly-dead clients
-	// get reaped instead of lingering forever.
-	const pongTimeout = 90 * time.Second
-	wsConn.SetReadDeadline(time.Now().Add(pongTimeout))
-	wsConn.SetPongHandler(func(string) error {
-		return wsConn.SetReadDeadline(time.Now().Add(pongTimeout))
-	})
-
 	knownHosts, err := knownhosts.New(knownHostsPath())
 	if err != nil {
 		slog.Error("failed to get ssh known hosts", "error", err)
@@ -233,12 +223,6 @@ func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 
-	// Keepalive: Cloudflare drops WebSockets after ~100s of silence.
-	// Ping from this goroutine only — it's the sole wsConn writer, and
-	// gorilla forbids concurrent writes. Browsers auto-pong.
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
-
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -266,12 +250,12 @@ func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
 			if len(batch) == 0 {
 				timer.Reset(flushDelay)
 			}
+			// if batch get full we send it,
+			// if it gets overflown, we leave the bonus and make it wait for another
+			// send round, if too less data in batch for over flushDelay we send whatever is in batch to not stall
 			batch = append(batch, chunk...)
 			if len(batch) >= batchSize {
 				stopTimer()
-				// HOL fix: never send >batchSize per frame. Drain full
-				// batchSize slices immediately; leave <batchSize tail to
-				// coalesce via timer. At 1 Mbps, 4 KiB ~32ms vs 16 KiB ~128ms.
 				for len(batch) >= batchSize {
 					toSend := make([]byte, batchSize)
 					copy(toSend, batch[:batchSize])
@@ -287,10 +271,6 @@ func pumpOutputs(wsConn *websocket.Conn, sources ...io.Reader) {
 			}
 		case <-timer.C:
 			if err := flush(); err != nil {
-				return
-			}
-		case <-pingTicker.C:
-			if err := wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
