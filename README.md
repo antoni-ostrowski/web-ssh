@@ -1,6 +1,6 @@
 # Web ssh 
 
-Self-hosted web app and SSH proxy built as a usable mobile SSH client for iPadOS. The browser terminal uses [ghostty-web](https://github.com/coder/ghostty-web), a Ghostty WASM terminal emulator with canvas rendering, and connects to backend servers over WebSocket.
+Self-hosted web app and SSH proxy. The browser terminal uses [ghostty-web](https://github.com/coder/ghostty-web), a Ghostty WASM terminal emulator with canvas rendering, and connects to backend servers over WebSocket.
 
 
 > Warning! i dont plan to secure this app in any way, because I rely on Cloudflare Tunnel and Zero Trust policies to enforce access control
