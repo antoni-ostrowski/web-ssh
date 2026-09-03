@@ -123,7 +123,7 @@ async function start() {
 	}
 
 	const opts = {
-		cursorBlink: true,
+		cursorBlink: false,
 		fontSize: 14,
 		fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
 		scrollback: 5000,
@@ -162,7 +162,7 @@ async function start() {
 	if (typeof fitAddon.observeResize === "function") {
 		try {
 			fitAddon.observeResize();
-		} catch {}
+		} catch { }
 	} else if (typeof ResizeObserver !== "undefined") {
 		const ro = new ResizeObserver(() => {
 			clearTimeout(resizeTimeout);
