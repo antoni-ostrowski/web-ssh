@@ -33,8 +33,11 @@ body {
 	width: 100%;
 	height: auto;
 	border-radius: 0;
+	overflow: hidden;
+	position: relative;
+	background: #1e1e1e;
 }
 
-#terminal .xterm {
-	height: 100%;
+#terminal canvas {
+	display: block;
 }

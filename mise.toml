@@ -11,7 +11,10 @@ run = "air"
 
 [tasks.build-client]
 description = "build client assets"
-run = "bun build src.js --outdir public/build --target browser"
+run = [
+  "bun build src.js --outdir public/build --target browser",
+  "cp node_modules/ghostty-web/ghostty-vt.wasm public/ghostty-vt.wasm",
+]
 
 [tasks.build-backend]
 description = "build go server"

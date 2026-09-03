@@ -1,9 +1,6 @@
-import { Terminal } from "@xterm/xterm";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
+import { init, Terminal, FitAddon, Ghostty } from "ghostty-web";
 
-const name = location.pathname.split("/").pop()
+const name = location.pathname.split("/").pop();
 const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsUrl = `${protocol}//${window.location.host}/connect/${name}`;
 
@@ -14,57 +11,13 @@ statusEl.id = "status";
 statusEl.textContent = "connecting";
 termElement.parentNode.insertBefore(statusEl, termElement);
 
-const term = new Terminal({
-	cursorBlink: true,
-	fontSize: 14,
-	fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-	scrollback: 5000,
-});
-
-const fitAddon = new FitAddon();
-term.loadAddon(fitAddon);
-
-let webgl = new WebglAddon();
-term.loadAddon(webgl);
-webgl.onContextLoss(() => {
-	webgl.dispose();
-});
-
-term.open(termElement);
-term.focus();
-
+let term;
+let fitAddon;
 let ws;
 let retries = 0;
 
-const connectWs = () => {
-	ws = new WebSocket(wsUrl);
-	ws.binaryType = "arraybuffer";
-
-	ws.onopen = () => {
-		retries = 0;
-		statusEl.textContent = "connected";
-		term.reset();
-		fit();
-	};
-
-	ws.onclose = () => {
-		statusEl.textContent = "disconnected";
-		setTimeout(connectWs, Math.min(1000 * 2 ** retries++, 10000));
-	};
-
-	ws.onerror = () => {
-		statusEl.textContent = "disconnected";
-	};
-
-	ws.onmessage = (event) => {
-		term.write(new Uint8Array(event.data));
-	};
-};
-
-connectWs();
-
 const send = (frame) => {
-	if (ws.readyState === WebSocket.OPEN) {
+	if (ws && ws.readyState === WebSocket.OPEN) {
 		ws.send(frame);
 	}
 };
@@ -85,17 +38,9 @@ const sendData = (str) => {
 	send(frame);
 };
 
-term.onData((data) => {
-	sendData(data);
-});
-
-term.onResize(({ cols, rows }) => {
-	statusEl.textContent = `${cols}x${rows}`;
-	sendResize(cols, rows);
-});
-
 let resizeTimeout = null;
 const fit = () => {
+	if (!term || !fitAddon) return;
 	try {
 		const parent = termElement.parentElement;
 		if (parent && parent.offsetHeight === 0) return;
@@ -103,76 +48,148 @@ const fit = () => {
 	} catch (err) {
 		// container hidden/zero-size; retry on next event
 	}
-	sendResize(term.cols, term.rows);
+	if (term.cols && term.rows) {
+		sendResize(term.cols, term.rows);
+	}
 };
 
-window.addEventListener("resize", () => {
-	clearTimeout(resizeTimeout);
-	resizeTimeout = setTimeout(fit, 100);
-});
+const connectWs = () => {
+	ws = new WebSocket(wsUrl);
+	ws.binaryType = "arraybuffer";
 
-if (typeof ResizeObserver !== "undefined") {
-	const ro = new ResizeObserver(() => {
+	ws.onopen = () => {
+		retries = 0;
+		statusEl.textContent = "connected";
+		if (term) {
+			term.reset();
+			// fit after reset, give renderer a frame to settle
+			requestAnimationFrame(() => setTimeout(fit, 50));
+		}
+	};
+
+	ws.onclose = () => {
+		statusEl.textContent = "disconnected";
+		setTimeout(connectWs, Math.min(1000 * 2 ** retries++, 10000));
+	};
+
+	ws.onerror = () => {
+		statusEl.textContent = "disconnected";
+	};
+
+	ws.onmessage = (event) => {
+		if (!term) return;
+		const data = event.data;
+		if (data instanceof ArrayBuffer) {
+			term.write(new Uint8Array(data));
+		} else if (data instanceof Uint8Array) {
+			term.write(data);
+		} else if (typeof data === "string") {
+			term.write(data);
+		} else {
+			// Blob fallback
+			if (data instanceof Blob) {
+				data.arrayBuffer().then((buf) => term.write(new Uint8Array(buf)));
+			}
+		}
+	};
+};
+
+async function start() {
+	statusEl.textContent = "loading terminal…";
+
+	let ghosttyInstance = null;
+	let initOk = false;
+	try {
+		await init();
+		initOk = true;
+	} catch (e) {
+		console.warn("[ghostty-web] init() failed, trying explicit WASM paths", e);
+		const candidates = ["/public/ghostty-vt.wasm", "/public/build/ghostty-vt.wasm", "/ghostty-vt.wasm"];
+		for (const p of candidates) {
+			try {
+				ghosttyInstance = await Ghostty.load(p);
+				console.log(`[ghostty-web] loaded WASM from ${p}`);
+				initOk = true;
+				break;
+			} catch (e2) {
+				console.warn(`[ghostty-web] failed to load ${p}`, e2);
+			}
+		}
+		if (!initOk) {
+			console.error("[ghostty-web] all WASM load attempts failed");
+			statusEl.textContent = "failed to load terminal";
+			return;
+		}
+	}
+
+	const opts = {
+		cursorBlink: true,
+		fontSize: 14,
+		fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+		scrollback: 5000,
+		theme: {
+			background: "#1e1e1e",
+			foreground: "#d4d4d4",
+		},
+	};
+	if (ghosttyInstance) {
+		opts.ghostty = ghosttyInstance;
+	}
+
+	term = new Terminal(opts);
+
+	fitAddon = new FitAddon();
+	term.loadAddon(fitAddon);
+
+	term.open(termElement);
+	term.focus();
+
+	term.onData((data) => {
+		sendData(data);
+	});
+
+	term.onResize(({ cols, rows }) => {
+		statusEl.textContent = `${cols}x${rows}`;
+		sendResize(cols, rows);
+	});
+
+	window.addEventListener("resize", () => {
 		clearTimeout(resizeTimeout);
 		resizeTimeout = setTimeout(fit, 100);
 	});
-	ro.observe(termElement);
-}
 
-if (document.fonts?.ready) {
-	document.fonts.ready.then(() => setTimeout(fit, 50));
-}
-
-document.addEventListener("visibilitychange", () => {
-	if (!document.hidden) {
-		setTimeout(fit, 150);
-		if (ws.readyState === WebSocket.CLOSED) {
-			connectWs();
-		}
+	// Use FitAddon's built-in observer if available, otherwise fallback to manual
+	if (typeof fitAddon.observeResize === "function") {
+		try {
+			fitAddon.observeResize();
+		} catch {}
+	} else if (typeof ResizeObserver !== "undefined") {
+		const ro = new ResizeObserver(() => {
+			clearTimeout(resizeTimeout);
+			resizeTimeout = setTimeout(fit, 100);
+		});
+		ro.observe(termElement);
 	}
-});
 
-webgl.onContextLoss(() => {
-	webgl.dispose();
-});
+	if (document.fonts?.ready) {
+		document.fonts.ready.then(() => setTimeout(fit, 50));
+	}
 
-termElement.addEventListener("webglcontextrestored", () => {
-	setTimeout(fit, 50);
-});
+	document.addEventListener("visibilitychange", () => {
+		if (!document.hidden) {
+			setTimeout(fit, 150);
+			if (ws && ws.readyState === WebSocket.CLOSED) {
+				connectWs();
+			}
+		}
+	});
 
-fit();
+	// initial fit after fonts/layout settle
+	// ghostty needs a frame for metrics, so defer
+	requestAnimationFrame(() => setTimeout(fit, 50));
+	setTimeout(fit, 150);
 
-// const modifierKeysCodes = [
-// 	"ControlLeft",
-// 	"ControlRight",
-// 	"AltLeft",
-// 	"AltRight",
-// 	"MetaRight",
-// 	"MetaLeft",
-// 	"ShiftLeft",
-// 	"ShiftRight",
-// 	"CapsLock",
-// 	"Escape",
-// ];
+	connectWs();
+}
 
-// const termTextAreaElement =
-// 	document.querySelector(".xterm-helper-textarea") ||
-// 	document.querySelector("#terminal textarea");
-// console.log(termTextAreaElement)
-//
-// if (termTextAreaElement) {
-// 	termTextAreaElement.addEventListener("keydown", (e) => {
-// 		const keyCode = e.code;
-// 		console.log(keyCode);
-// 		if (modifierKeysCodes.includes(keyCode)) {
-// 			e.preventDefault();
-// 			// console.log("found key:", keyCode);
-// 			ws.send(
-// 				JSON.stringify({
-// 					type: "special_key",
-// 					payload: keyCode,
-// 				}),
-// 			);
-// 		}
-// 	});
-// }
+start();

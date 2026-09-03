@@ -1,11 +1,14 @@
 # Web ssh 
 
-Self-hosted web app & ssh proxy I build purely to have usable mobile ssh client on IpadOS. The point of this project is so I can make use of modifier keys that are literally un-mappable on IpadOS and in every ssh client app except for Blink Shell (I think), but it paid and i dont care about 99% of its features.
+Self-hosted web app and SSH proxy built as a usable mobile SSH client for iPadOS. The browser terminal uses [ghostty-web](https://github.com/coder/ghostty-web), a Ghostty WASM terminal emulator with canvas rendering, and connects to backend servers over WebSocket.
+
 
 > Warning! i dont plan to secure this app in any way, because I rely on Cloudflare Tunnel and Zero Trust policies to enforce access control
 
 
 # Hosting
+
+The frontend is bundled with Bun. `ghostty-vt.wasm` is copied into `public/` during the client build and served alongside the JavaScript bundle.
 
 ## Configuration format (`config.json`):
 

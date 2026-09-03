@@ -9,7 +9,7 @@ exclude_dir = ["tmp", "node_modules"]
 [[build.rules]]
 name = "frontend"
 include_file = ["src.js"]
-cmd = "bun build src.js --outdir public/build --target browser"
+cmd = "mise build-client"
 
 
 [proxy]
