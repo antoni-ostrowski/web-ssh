@@ -7,20 +7,29 @@
 	<title>web shell client</title>
 	<link rel="stylesheet" href="/public/my_css.css" />
 	<script defer type="module" src="/public/build/src.js"></script>
-	<style>
-		.back-button {
-			color: white;
-			padding: 0;
-			margin: 0;
-			background-color: #1e1e1e;
-		}
-	</style>
 </head>
 
 <body>
 
-	<a href="/" class="back-button">back</a>
+	<div id="toolbar">
+		<a href="/" class="back-button">back</a>
+		<span class="spacer"></span>
+		<button id="btn-select" type="button" aria-pressed="false" title="Drag to select text">Select</button>
+		<button id="btn-copy" type="button" title="Copy selection to clipboard">Copy</button>
+		<button id="btn-paste" type="button" title="Paste from clipboard">Paste</button>
+	</div>
 	<div id="terminal"></div>
+
+	<div id="paste-sheet" hidden>
+		<div class="sheet">
+			<p>Clipboard read was blocked. Long-press the box, tap Paste, then Insert.</p>
+			<textarea id="paste-area" rows="4" placeholder="long-press here, then Paste"></textarea>
+			<div class="sheet-row">
+				<button id="paste-insert" type="button">Insert</button>
+				<button id="paste-cancel" type="button">Cancel</button>
+			</div>
+		</div>
+	</div>
 </body>
 
 </html>

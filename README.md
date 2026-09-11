@@ -98,3 +98,33 @@ uses `switch-client`, so it's meant to be run from inside tmux.
 # Todos
 - [ ] qmk inspired remaping control
 - [ ] modifying config from client
+
+## Copy & paste on iPad
+
+The terminal page has **Copy** / **Paste** / **Select** buttons (touch-sized,
+in the top bar) because iPad Safari can't rely on right-click or modifier
+keys reaching the canvas.
+
+- **Paste (iPad -> terminal):** tap **Paste**. It uses
+  `navigator.clipboard.readText()` + bracketed paste, so pasting into
+  nvim/tmux is safe. If the browser blocks the read (no HTTPS, no permission),
+  a sheet opens: long-press the box, tap the native Paste, then Insert.
+  External-keyboard Cmd-V is intercepted and routed through the same
+  bracketed-paste path.
+- **Copy (terminal -> iPad):** tap **Select**, drag with one finger, release —
+  the selection auto-copies like on desktop. **Copy** copies the current
+  selection manually (it lights up when a background copy needs a tap to
+  finish, see below).
+- **tmux yank -> iPad clipboard (OSC52):** the client intercepts
+  `ESC ] 52 ; c ; <base64> BEL` sequences from the pty and writes them to the
+  system clipboard, so `y` in tmux vi-copy-mode lands in the iPad clipboard.
+  iPad Safari may refuse clipboard writes without a user gesture — then the
+  text is stashed and **Copy** finishes it on tap. Requires on the remote
+  (tmux 3.2+):
+  ```
+  set -g set-clipboard on
+  set -as terminal-features ',xterm-256color:clipboard'
+  ```
+  Test with: `printf '\e]52;c;%s\a' "$(printf hello-iPad | base64)"`
+  Note: a tmux yank lives in the tmux buffer, not the iPad clipboard — Cmd-V
+  alone can never see it without the OSC52 bridge above.
