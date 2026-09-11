@@ -1,13 +1,9 @@
 services:
   web-ssh:
-   extra_hosts:
-     - "host.docker.internal:host-gateway"
-   build: .
-   volumes:
-     - type: bind
-       source: ${CONFIG}
-       target: /app/config/config.json
-     - type: bind
-       source: ${KNOWN_HOSTS}
-       target: /app/config/known_hosts
-
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    build: .
+    volumes:
+      - type: bind
+        source: ${CONFIG_DIR}
+        target: /app/config

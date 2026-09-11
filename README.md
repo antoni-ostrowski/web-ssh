@@ -35,9 +35,18 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /opt/web-ssh/config.json:/app/config/config.json:ro
-      - /Users/user/.ssh/known_hosts:/app/config/known_hosts:ro
+      - /opt/web-ssh:/app/config:ro
 ```
+
+`/opt/web-ssh` on the host must be a directory containing `config.json` and
+`known_hosts`. Mount the directory, not the files: if a host *file* source is
+missing at container-creation time, Docker silently creates a directory in its
+place and the app fails at startup with `read .../config.json: is a directory`.
+With a directory mount the worst case is a missing file inside it, which the app
+self-heals (writes a default config / empty known_hosts). In Coolify this means
+one env var (`CONFIG_DIR=/opt/web-ssh`) or one persistent storage bound to
+`/app/config` instead of two file mounts. Omit `:ro` if you want the self-heal
+to be able to write.
 
 Then:
 
@@ -52,6 +61,9 @@ Open http://localhost:3000 — the index page lists the servers from `config.jso
 - these are the environment variables you can overwrite and their default values you should map volumes to:
     - `CONFIG_PATH` -> `/app/config/config.json`
     - `SSH_KNOWN_HOSTS` -> `/app/config/known_hosts`
+    - for docker, prefer a single directory bind of the host config dir to
+      `/app/config` (see compose example above) over mounting the files
+      individually
 - Known hosts must contain the ed25519 fingerprints of every target server (`HostKeyAlgorithms` is pinned to `ssh-ed25519`).
 - There is no auth on the app itself — protect it with Cloudflare Tunnel + Zero Trust or another reverse proxy.
 
