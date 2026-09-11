@@ -4,6 +4,7 @@ Self-hosted web app and SSH proxy. The browser terminal uses [ghostty-web](https
 
 
 > Warning! i dont plan to secure this app in any way, because I rely on Cloudflare Tunnel and Zero Trust policies to enforce access control
+> UPDATE: I found this whole Ipad ssh client worflow clunky and I dont plan to expand on it 
 
 
 # Hosting
